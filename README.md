@@ -74,3 +74,18 @@ crflc -s x.x.x.x -l 7000,7010,7020,8000
 ```
 
 Transfers `:8001` to the above listening client.
+
+### `crfl` over TLS
+
+By specifying certificates on server side
+
+```bash
+crfls -s example.com/fullchain.pem:example.com/privkey.prm,www.example.com.crt:www.example.com.key  # cert1:key1[;cert2:key2[...]]
+```
+
+`crfls` will now transfer any data over TLS using these certificates. Note that you also need to use domain rather than
+IP address on `crflc`
+
+```bash
+crflc -s example.com -l 7000
+```

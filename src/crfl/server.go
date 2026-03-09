@@ -1,6 +1,7 @@
 package crfl
 
 import (
+	"crypto/tls"
 	"fmt"
 	"io"
 	"log"
@@ -27,7 +28,7 @@ func NewServer(port int, maxListeners int) *Server {
 	}
 }
 
-func (s *Server) Start(verbose bool) error {
+func (s *Server) Start(certs []tls.Certificate, verbose bool) error {
 	listen, err := net.Listen("tcp", ":"+strconv.Itoa(s.port))
 	if err != nil {
 		return fmt.Errorf("failed to listen on port %d: %v", s.port, err)
@@ -41,11 +42,20 @@ func (s *Server) Start(verbose bool) error {
 	log.Printf("crfls listening on port %d with %d max listeners", s.port, len(s.listener))
 
 	for {
-		conn, err := listen.Accept()
+		rconn, err := listen.Accept()
 		if err != nil {
 			log.Printf("failed to accept socket: %v", err)
 			continue
 		}
+
+		conn, err := askTLSs(rconn, certs)
+		if err != nil {
+			if err := rconn.Close(); err != nil {
+				log.Printf("%v", err)
+			}
+			continue
+		}
+
 		go s.handle(conn, verbose)
 	}
 }
@@ -57,17 +67,17 @@ func (s *Server) handle(conn net.Conn, verbose bool) {
 		}
 	}()
 
-	buf := make([]byte, 8)
+	buf := make([]byte, 4)
 	n, err := io.ReadFull(conn, buf)
 	if err != nil {
 		log.Printf("failed to connect with client: %v", err)
 		return
-	} else if n != 8 || string(buf[:4]) != "crfl" {
+	} else if n != 4 {
 		log.Printf("failed to identify client")
 		return
 	}
 
-	id := int(int32(BytestoU32(buf[4:])))
+	id := int(int32(BytestoU32(buf)))
 	if id > len(s.listener) {
 		log.Printf("client specified an out-of-bounds id: %d", id)
 		if err := copyString(conn, "crfloutofb"); err != nil {
@@ -198,7 +208,7 @@ func (s *Server) handle(conn net.Conn, verbose bool) {
 			log.Printf("failed to send verification to client: %v", err)
 			return
 		}
-		log.Printf("%s: connected as listening client", conn.RemoteAddr().String())
+		log.Printf("%s: connected as listening client on id: %d", conn.RemoteAddr().String(), id)
 
 		callbacks := make(map[uint32]chan Pack)
 		send := make(chan Pack, 1024)

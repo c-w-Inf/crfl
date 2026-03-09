@@ -31,17 +31,22 @@ func NewListener(ip string, port int, forwardPort int, lid int) *Listener {
 }
 
 func (l *Listener) Start(verbose bool) error {
-	conn, err := net.Dial("tcp", l.ip+":"+strconv.Itoa(l.port))
+	rconn, err := net.Dial("tcp", l.ip+":"+strconv.Itoa(l.port))
 	if err != nil {
 		return fmt.Errorf("failed to connect with server %s:%d: %v", l.ip, l.port, err)
 	}
 	defer func() {
-		if err := conn.Close(); err != nil {
+		if err := rconn.Close(); err != nil {
 			log.Printf("failed to close connection to server: %v", err)
 		}
 	}()
 
-	if err := copyBytes(conn, append([]byte("crfl"), U32toBytes(uint32(l.lid))...)); err != nil {
+	conn, err := askTLSc(rconn, l.ip)
+	if err != nil {
+		return err
+	}
+
+	if err := copyBytes(conn, U32toBytes(uint32(l.lid))); err != nil {
 		return fmt.Errorf("failed to connect with server: %v", err)
 	}
 	buf := make([]byte, 10)

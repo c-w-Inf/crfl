@@ -2,10 +2,12 @@ package crfl
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
+	"net"
 )
 
 type Pack struct {
@@ -89,6 +91,71 @@ func copyPack(w io.Writer, p Pack) error {
 
 func (p Pack) String() string {
 	return fmt.Sprintf("{stat=%d,lid=%d,cid=%d,datlen=%d}", p.status, p.lid, p.cid, len(p.dat))
+}
+
+func askTLSs(conn net.Conn, certs []tls.Certificate) (net.Conn, error) {
+	buf := make([]byte, 4)
+	n, err := io.ReadFull(conn, buf)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect with client: %v", err)
+	} else if n != 4 {
+		return nil, fmt.Errorf("failed to identify client")
+	} else if string(buf) == "crfl" {
+
+		if len(certs) == 0 {
+			if err := copyString(conn, "crfl"); err != nil {
+				return nil, fmt.Errorf("failed to connect with client: %v", err)
+			}
+			return conn, nil
+		}
+
+		if err := copyString(conn, "ctls"); err != nil {
+			return nil, fmt.Errorf("failed to connect with client: %v", err)
+		}
+
+		tlsconn := tls.Server(conn, &tls.Config{
+			Certificates: certs,
+		})
+
+		if err := tlsconn.Handshake(); err != nil {
+			return nil, fmt.Errorf("failed to TLS handshake: %v", err)
+		}
+		return tlsconn, nil
+
+	} else {
+		return nil, fmt.Errorf("failed to identify client")
+	}
+}
+
+func askTLSc(conn net.Conn, name string) (net.Conn, error) {
+	buf := make([]byte, 4)
+
+	if err := copyString(conn, "crfl"); err != nil {
+		return nil, fmt.Errorf("failed to connect with client: %v", err)
+	}
+
+	n, err := io.ReadFull(conn, buf)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect with client: %v", err)
+	} else if n != 4 {
+		return nil, fmt.Errorf("failed to identify client")
+	} else if string(buf) == "crfl" {
+		return conn, nil
+	} else if string(buf) == "ctls" {
+
+		tlsconn := tls.Client(conn, &tls.Config{
+			ServerName:         name,
+			InsecureSkipVerify: false,
+		})
+		if err := tlsconn.Handshake(); err != nil {
+			return nil, fmt.Errorf("failed to tls handshake: %v", err)
+		}
+		return tlsconn, nil
+
+	} else {
+		return nil, fmt.Errorf("failed to identify client")
+	}
 }
 
 func copyString(w io.Writer, str string) error {

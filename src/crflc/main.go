@@ -44,7 +44,7 @@ func main() {
 		}
 
 		if err := crfl.NewNormal(*ip, *port, ports).Start(*verbose); err != nil {
-			fmt.Printf("error: %v\n", err)
+			fmt.Printf("crflc stopped: %v\n", err)
 		}
 	}
 }

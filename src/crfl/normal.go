@@ -26,17 +26,22 @@ func NewNormal(ip string, port int, listeningPort []int) *Normal {
 }
 
 func (n *Normal) Start(verbose bool) error {
-	conn, err := net.Dial("tcp", n.ip+":"+strconv.Itoa(n.port))
+	rconn, err := net.Dial("tcp", n.ip+":"+strconv.Itoa(n.port))
 	if err != nil {
 		return fmt.Errorf("failed to connect with server %s:%d: %v", n.ip, n.port, err)
 	}
 	defer func() {
-		if err := conn.Close(); err != nil {
+		if err := rconn.Close(); err != nil {
 			log.Printf("failed to close connection to server: %v", err)
 		}
 	}()
 
-	if err := copyBytes(conn, append([]byte("crfl"), U32toBytes(^uint32(0))...)); err != nil {
+	conn, err := askTLSc(rconn, n.ip)
+	if err != nil {
+		return err
+	}
+
+	if err := copyBytes(conn, U32toBytes(^uint32(0))); err != nil {
 		return fmt.Errorf("failed to connect with server: %v", err)
 	}
 	buf := make([]byte, 14)
@@ -95,6 +100,8 @@ func (n *Normal) listen(port int, lid int, verbose bool) {
 		log.Printf("failed to listen on %d: %v", port, err)
 		return
 	}
+	log.Printf("listening on port %v", port)
+
 	defer func() {
 		if err := listen.Close(); err != nil {
 			log.Printf("failed to close listen on port %d: %v", port, err)
